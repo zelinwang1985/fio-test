@@ -42,7 +42,6 @@ class RunFIO(object):
                     cmd = 'ps -ef | grep fio | grep server | grep -v grep'
                     stdin, stdout, stderr = ssh.exec_command(cmd)
                     output = stdout.readlines()
-                    print output
                     if output == []:
                         print "================={} without fio server".format(client)
                         cmd = 'nohup fio --server &'

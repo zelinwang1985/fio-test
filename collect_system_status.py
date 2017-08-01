@@ -20,6 +20,8 @@ class SysInfo(object):
         if havedb:
             self.db = ToDB()
         self.havedb = havedb
+        self.intervaltime = 1
+
         self.host_list = []
         ssh = paramiko.SSHClient()
         ssh.load_system_host_keys()
@@ -55,17 +57,15 @@ class SysInfo(object):
         ssh.close()
 
     def sys_info(self, host):
-        cmds = ['sar -A 1 >/tmp/sar.log &',
-            'date >/tmp/iostat.log; iostat -p -dxm 1 >>/tmp/iostat.log &',
-            'while true; do ceph -s --format json-pretty; sleep 1; done >/tmp/ceph.log &']
+        cmds = ['sar -A {} >/tmp/sar.log &'.format(self.intervaltime),
+            'date >/tmp/iostat.log; iostat -p -dxm {} >>/tmp/iostat.log &'.format(self.intervaltime),
+            'while true; do ceph -s --format json-pretty; sleep {}; done >/tmp/ceph.log &'.format(self.intervaltime)]
         self.run_sshcmds(host, cmds)
 
     def get_sys_info(self):
         for host in self.host_list:
             print 'get sysinfo {}'.format(host)
             p = Process(target=self.sys_info, args=(host,))
-            p.start()
-            p = Process(target=self.get_ceph_conf, args=(host,))
             p.start()
 
     def cleanup_sys_info(self, host):
@@ -105,13 +105,14 @@ class SysInfo(object):
         self.get_logfile(host, 'iostat.log', log_dir)
         self.get_logfile(host, 'ceph.log', log_dir)
         self.get_logfile(host, 'perfdump.log', log_dir)
-        self.get_logfile(host, 'ceph_config.log', log_dir)
+        #self.get_logfile(host, 'ceph_config.log', log_dir)
 
     def get_all_host_logfile(self, log_dir):
         self.cleanup_all()
         for host in self.host_list:
             print 'get sysinfo logs from {}'.format(host)
             self.get_all_logfile(self.nodes[host]['public_ip'], log_dir)
+            self.get_ceph_conf(self.nodes[host]['public_ip'], log_dir)
 
     def get_ceph_perfdump(self, host):
         #cmds = ['while true; do find /var/run/ceph -name \'*osd*asok\' | while read path; do ceph --admin-daemon $path perf dump; done; sleep 1; done >/tmp/perfdump.log &']
@@ -123,13 +124,54 @@ class SysInfo(object):
             cmds = ['find /var/run/ceph -name \'*osd*asok\' | while read path; do ceph --admin-daemon $path perf reset all; done']
             self.run_sshcmds(host, cmds)
 
-    def get_ceph_conf(self, host):
-        cmds = ['find /var/run/ceph -name \'*osd*asok\' | while read path; do ceph --admin-daemon $path config show; done >/tmp/ceph_config.log']
-        self.run_sshcmds(host, cmds)
+    def get_ceph_conf(self, host, log_dir):
+        ssh = paramiko.SSHClient()
+        ssh.load_system_host_keys()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh.connect(
+            hostname = host,
+            port = 22,
+            username = 'root',
+            password = 'passw0rd'
+        )
+        cmd = 'find /var/run/ceph -name \'*osd*asok\''
+        stdin, stdout, stderr = ssh.exec_command(cmd)
+        osd_list = stdout.readlines()
+        ceph_config_file_list = []
+        for osd in osd_list:
+            osd = osd.strip()
+            cmd = 'ceph --admin-daemon {} config show > /tmp/{}_ceph_config.json'.format(
+                osd,
+                re.search('(osd\.\d+)', osd).group(1)
+            )
+            ssh.exec_command(cmd)
+            ceph_config_file_list.append('{}_ceph_config.json'.format(
+                re.search('(osd\.\d+)', osd).group(1)
+            ))
+        ssh.close()
+
+        t = paramiko.Transport(host, "22")
+        t.connect(username = "root", password = "passw0rd")
+        sftp = paramiko.SFTPClient.from_transport(t)
+        if not os.path.exists(log_dir):
+            try:
+                os.makedirs(log_dir)
+            except Exception, e:
+                print "make sysinfo log dir fail:{}".format(e)
+                sys.exit(1)
+        for log in ceph_config_file_list:
+            remotepath = '/tmp/{}'.format(log)
+            localpath = '{}/{}_{}'.format(log_dir, host, log)
+            print host, remotepath, localpath
+            sftp.get(remotepath, localpath)
+        t.close()
+
+
 
     def deal_with_sysinfo_logfile(self, log_dir, ceph_info):
         self.deal_with_sarlog(log_dir, ceph_info)
         self.deal_with_iostatlog(log_dir, ceph_info)
+        self.deal_with_cephconfiglog(log_dir)
 
     def close_db(self):
         if self.havedb:
@@ -413,13 +455,14 @@ class SysInfo(object):
             os.chdir(log_dir)
             dir_list = os.getcwd().split('/')
             casename = re.match('sysinfo_(.*)', dir_list[-1]).group(1)
-            for host in self.host_list:
-                with open('{}_ceph_config.log'.format(self.nodes[host]['public_ip'])) as f:
-                    ceph_configs = json.load(f)
-                print "================================="
-                print ceph_configs['debug_paxos']
-                print "================================="
-                self.db.insert_tb_cephconfigdata(casename, host, **ceph_configs)
+            log_files = os.popen('ls *ceph_config.json').readlines()
+            for log_file in log_files:
+                log_file = log_file.strip()
+                print log_file
+                host = log_file.split('_')[0]
+                osd = log_file.split('_')[1]
+                ceph_configs = json.load(open(log_file))
+                self.db.insert_tb_cephconfigdata(casename, host, osd, **ceph_configs)
 
 
 

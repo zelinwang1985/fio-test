@@ -178,7 +178,7 @@ class ToDB(object):
         except:
             self.db.rollback()
 
-    def insert_tb_cephconfigdata(self, casename, node, **kwargs):
+    def insert_tb_cephconfigdata(self, casename, node, osd, **kwargs):
         sql = "SELECT * FROM RESULT \
             WHERE case_name = '{}'".format(casename)
         try:
@@ -188,12 +188,13 @@ class ToDB(object):
                 caseid = row[0]
         except:
             self.db.rollback()
-        sql = "INSERT INTO CEPHCONFIGDATA(caseid, node, \
+        sql = "INSERT INTO CEPHCONFIGDATA(caseid, node, osd, \
             debug_paxos ) \
-            VALUES ('{}', '{}', \
+            VALUES ('{}', '{}', '{}', \
             '{}')".format(
                 caseid,
                 node,
+                osd,
                 kwargs['debug_paxos'],
         )
         try:
@@ -302,6 +303,7 @@ class ToDB(object):
             id int auto_increment primary key,
             caseid int not null,
             node  char(20),
+            osd  char(20),
             debug_paxos char(20),
             foreign key(caseid) references RESULT(id) ) ENGINE=MyISAM"""
         self.cursor.execute(sql)

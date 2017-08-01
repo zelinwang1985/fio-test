@@ -7,7 +7,7 @@ usage (){
   echo "For the new ceph env, please run \"init-image\" to create new rbds for testing."
   echo "Or use \"build-suite\" to create new test config file for FIO."
   echo "Or use \"list-suites\" to show the previous created test."
-  echo "Or use \"run \$test_suite_name\" to run test."
+  echo "Or use \"run \$test_suite_name\" [-b] to run test."
   echo 
   exit 0
 }
@@ -123,19 +123,21 @@ if [ $1 == "build-suite" ]; then
     read imagename
   done
 
-  while [ ! -n "$cephconfig" ]; do
+  cephconfig=""
+  while [ "$cephconfig" == ""]; do
     echo -n "
         Enter the ceph config you want to modify, eg. \"debug_paxos:35,debug_paxos:[1-20]\":"
     read cephconfig
     if [ ! -n "$cephconfig" ]; then
-        while [ "$answer" != "Yes" ] ; do
-          echo -n "Will keep the ceph config by default.[Yes|No]:"
-          read answer
-        done
-        cephconfig="default"
+        echo -n "Will keep the ceph config by default.[Yes]:"
+        read answer
+        if [ "$answer" == "Yes" ] || [ ! -n "$answer" ]; then
+          cephconfig="default"
+        else
+          cephconfig=""
+        fi
     fi
   done
-
 
   date >> $LOG
   echo python build_suite.py -C $clients_ip --readwritetype $rw_type --blocksize $bs --runtime $runtime --iodepth $iodepth --numjob $numjob --imagecount $imagecount --rwmixread $rwmixread --imagename $imagename -N $suite_name --pool $pool --cephconfig $cephconfig | tee -a $LOG
@@ -149,9 +151,31 @@ elif [ $1 == "run" ]; then
     echo "Can't find test suite $2."
     exit 1
   else
-    date >>$LOG
-    echo python run_suite.py -N $2 -b | tee -a $LOG
-    python run_suite.py -N $2 -b | tee -a $LOG
+    if [ "$3" == "-b" ]; then
+      todb="Yes"
+      date >>$LOG
+      echo python run_suite.py -N $2 -b | tee -a $LOG
+      python run_suite.py -N $2 -b | tee -a $LOG
+    else
+      todb=""
+    fi
+
+    while [ "$todb" == "" ]; do
+      echo -n "
+        Do you want to insert the result data to db[Yes|No]:"
+      read todb
+      if [ "$todb" = "Yes" ]; then
+        date >>$LOG
+        echo python run_suite.py -N $2 -b | tee -a $LOG
+        python run_suite.py -N $2 -b | tee -a $LOG
+      elif [ "$todb" = "No" ]; then
+        date >>$LOG
+        echo python run_suite.py -N $2 | tee -a $LOG
+        python run_suite.py -N $2 | tee -a $LOG
+      else
+        todb=""
+      fi
+    done
   fi
 
 elif [ $1 == "list-suites" ]; then
