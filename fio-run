@@ -1,0 +1,202 @@
+#!/bin/bash
+
+usage (){
+  echo
+  echo "./run-fio [init-image|build-suite|list-suites|run \${suite_name}]"
+  echo 
+  echo "For the new ceph env, please run \"init-image\" to create new rbds for testing."
+  echo "Or use \"build-suite\" to create new test config file for FIO."
+  echo "Or use \"list-suites\" to show the previous created test."
+  echo "Or use \"run \$test_suite_name\" to run test."
+  echo 
+  exit 0
+}
+
+if [ $# == 0 ]; then 
+  usage
+fi
+
+LOG="/var/log/fiorun.log"
+
+
+if [ $1 == "build-suite" ]; then
+  while [ ! -n "$suite_name" ]; do
+    echo -n "Enter name of suite:"
+    read suite_name
+  done
+
+  while [ ! -n "$clients_ip" ]; do
+    echo -n "Enter the clients ip, separate \",\":"
+    read clients_ip
+  done
+
+  while [ ! -n "$rw_type" ]; do
+    echo -n "
+        1: rw
+        2: randrw
+        Type:"
+    read rw_type
+  done
+
+  while [ ! -n "$rwmixread" ]; do
+    echo -n "
+      RW MixRead(%), separate \",\":"
+    read rwmixread
+  done
+
+  while [ ! -n "$bs" ]; do
+    echo -n "
+        1:  4KB
+        2:  8KB
+        3:  16KB
+        4:  32KB
+        5:  64KB
+        6:  128KB
+        7:  256KB
+        8:  512KB
+        9:  1MB
+        10: 2MB
+        11: 4MB
+        12: 8MB
+        13: 16MB
+        14: 32MB
+        15: 64MB
+        16: 128MB
+        Block Size:"
+    read bs
+  done
+
+  while [ ! -n "$iodepth" ]; do
+    echo -n "
+        1:  1
+        2:  4
+        3:  8
+        4:  16
+        5:  32
+        6:  64
+        7:  128
+        8:  256
+        9:  512
+        10: 1024
+        IO Depth:"
+    read iodepth
+  done
+
+  while [ ! -n "$numjob" ]; do
+    echo -n "
+        1:  1
+        2:  4
+        3:  8
+        4:  16
+        5:  32
+        Num Job:"
+    read numjob
+  done
+
+  while [ ! -n "$runtime" ]; do
+    echo -n "
+        Runtime(s):"
+    read runtime
+  done
+
+  while [ ! -n "$pool" ]; do
+    echo -n "
+        Pool Name[rbd]:"
+    read pool
+    if [ ! -n "$pool" ]; then
+        pool="rbd"
+    fi
+  done
+
+  while [ ! -n "$imagecount" ]; do
+    echo -n "
+        Image Count:"
+    read imagecount
+  done
+
+  while [ ! -n "$imagename" ]; do
+    echo 
+    echo "Got below rbd images:"
+    rbd list
+    echo -n "
+        Please choose an image, w/o the number, eg. \"testimage_102400\":"
+    read imagename
+  done
+
+  while [ ! -n "$cephconfig" ]; do
+    echo -n "
+        Enter the ceph config you want to modify, eg. \"debug_paxos:35,debug_paxos:[1-20]\":"
+    read cephconfig
+    if [ ! -n "$cephconfig" ]; then
+        while [ "$answer" != "Yes" ] ; do
+          echo -n "Will keep the ceph config by default.[Yes|No]:"
+          read answer
+        done
+        cephconfig="default"
+    fi
+  done
+
+
+  date >> $LOG
+  echo python build_suite.py -C $clients_ip --readwritetype $rw_type --blocksize $bs --runtime $runtime --iodepth $iodepth --numjob $numjob --imagecount $imagecount --rwmixread $rwmixread --imagename $imagename -N $suite_name --pool $pool --cephconfig $cephconfig | tee -a $LOG
+  python build_suite.py -C $clients_ip --readwritetype $rw_type --blocksize $bs --runtime $runtime --iodepth $iodepth --numjob $numjob --imagecount $imagecount --rwmixread $rwmixread --imagename $imagename -N $suite_name --pool $pool --cephconfig $cephconfig | tee -a $LOG
+
+elif [ $1 == "run" ]; then
+  if [ $# -lt 2 ]; then
+    usage
+  fi
+  if [ ! -d "$PWD/test-suites/$2" ]; then
+    echo "Can't find test suite $2."
+    exit 1
+  else
+    date >>$LOG
+    echo python run_suite.py -N $2 -b | tee -a $LOG
+    python run_suite.py -N $2 -b | tee -a $LOG
+  fi
+
+elif [ $1 == "list-suites" ]; then
+  date >> $LOG
+  if [ $# == 2 ]; then
+    echo python run_suite.py -l -N $2 | tee -a $LOG
+    python run_suite.py -l -N $2 | tee -a $LOG
+  else
+    echo python run_suite.py -l | tee -a $LOG
+    python run_suite.py -l | tee -a $LOG
+  fi
+elif [ $1 == "init-image" ]; then
+  while [ ! -n "$client" ]; do
+    echo -n "
+        Client:"
+    read client
+  done
+
+  while [ ! -n "$imagecount" ]; do
+    echo -n "
+        Image Count:"
+    read imagecount
+  done
+
+  while [ ! -n "$imagesize" ]; do
+    echo -n "
+        1:  1G
+        2:  10G
+        3:  100G
+        Image Size:"
+    read imagesize
+  done
+
+  while [ ! -n "$pool" ]; do
+    echo -n "
+        Pool Name[rbd]:"
+    read pool
+    if [ ! -n "$pool" ]; then
+        pool="rbd"
+    fi
+  done
+
+  date >>$LOG
+  echo python init_image.py -C $client -I $imagecount -S $imagesize -P $pool | tee -a $LOG
+  python init_image.py -C $client -I $imagecount -S $imagesize -P $pool | tee -a $LOG
+else
+  usage
+fi

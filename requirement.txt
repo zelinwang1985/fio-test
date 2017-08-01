@@ -1,0 +1,4 @@
+openpyxl
+paramiko
+pyyaml
+mysql-python
