@@ -10,11 +10,12 @@ class ToDB(object):
 
     def insert_tb_result(self, **kwargs):
         sql = "INSERT INTO RESULT(case_name, \
-            blocksize, iodepth, numberjob, imagenum, \
+            time, blocksize, iodepth, numberjob, imagenum, \
             clientnum, iops, readwrite, lat ) \
-            VALUES ('{}', '{}', '{}', '{}', '{}', '{}', \
+            VALUES ('{}', '{}', '{}', '{}', '{}', '{}', '{}', \
             '{}', '{}', '{}' )".format(
                 kwargs['case_name'],
+                kwargs['time'],
                 kwargs['blocksize'],
                 kwargs['iodepth'],
                 kwargs['numberjob'],
@@ -136,8 +137,6 @@ class ToDB(object):
         except:
             self.db.rollback()
 
-
-
     def insert_tb_iostatdata(self, casename, node, osdnum, disk_name, **kwargs):
         sql = "SELECT * FROM RESULT \
             WHERE case_name = '{}'".format(casename)
@@ -179,7 +178,29 @@ class ToDB(object):
         except:
             self.db.rollback()
 
-
+    def insert_tb_cephconfigdata(self, casename, node, **kwargs):
+        sql = "SELECT * FROM RESULT \
+            WHERE case_name = '{}'".format(casename)
+        try:
+            self.cursor.execute(sql)
+            results = self.cursor.fetchall()
+            for row in results:
+                caseid = row[0]
+        except:
+            self.db.rollback()
+        sql = "INSERT INTO CEPHCONFIGDATA(caseid, node, \
+            debug_paxos ) \
+            VALUES ('{}', '{}', \
+            '{}')".format(
+                caseid,
+                node,
+                kwargs['debug_paxos'],
+        )
+        try:
+            self.cursor.execute(sql)
+            self.db.commit()
+        except:
+            self.db.rollback()
 
     def create_tb_result(self):
         sql = """CREATE TABLE RESULT (
@@ -276,10 +297,20 @@ class ToDB(object):
             foreign key(caseid) references RESULT(id) ) ENGINE=MyISAM"""
         self.cursor.execute(sql)
 
+    def create_tb_cephconfigdata(self):
+        sql = """CREATE TABLE CEPHCONFIGDATA (
+            id int auto_increment primary key,
+            caseid int not null,
+            node  char(20),
+            debug_paxos char(20),
+            foreign key(caseid) references RESULT(id) ) ENGINE=MyISAM"""
+        self.cursor.execute(sql)
+
     def close_db(self):
         self.db.close()
 
     def cleanup_db(self):
+        self.cursor.execute("DROP TABLE IF EXISTS CEPHCONFIGDATA")
         self.cursor.execute("DROP TABLE IF EXISTS IOSTATDATA")
         self.cursor.execute("DROP TABLE IF EXISTS SARCPUDATA")
         self.cursor.execute("DROP TABLE IF EXISTS SARMEMDATA")
@@ -296,6 +327,7 @@ def main():
     todb.create_tb_sarmemdata()
     todb.create_tb_iostatdata()
     todb.create_tb_sarnicdata()
+    todb.create_tb_cephconfigdata()
     todb.close_db()
 
 if __name__ == '__main__':

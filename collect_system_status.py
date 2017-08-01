@@ -16,24 +16,39 @@ from todb import ToDB
 
 class SysInfo(object):
 
-    def __init__(self, havedb=False):
+    def __init__(self, client, havedb=False):
         if havedb:
             self.db = ToDB()
         self.havedb = havedb
         self.host_list = []
+        ssh = paramiko.SSHClient()
+        ssh.load_system_host_keys()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh.connect(hostname=client, port=22, username='root', password='passw0rd')
         cmd = 'ceph osd tree | grep host'
-        items_list = subprocess.check_output(cmd, shell=True).split('\n')
-        del items_list[-1]
-        for item in items_list:
+        stdin, stdout, stderr = ssh.exec_command(cmd)
+        output = stdout.readlines()
+        for item in output:
             match = re.search('host (\S*)\s+', item)
             self.host_list.append(match.group(1))
+
+        self.hwinfo_file = '{}/../../ceph_hw_info.yml'.format(os.getcwd())
+        with open(self.hwinfo_file, 'r') as f:
+            ceph_info = yaml.load(f)
+        self.nodes = ceph_info['ceph-node']
+
 
     def run_sshcmds(self, host, cmds):
         ssh = paramiko.SSHClient()
         ssh.load_system_host_keys()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
-        ssh.connect(hostname=host, port=22, username='root', password='passw0rd')
+        ssh.connect(
+            hostname = self.nodes[host]['public_ip'],
+            port = 22,
+            username = 'root',
+            password = 'passw0rd'
+        )
         for cmd in cmds:
             print "exec {} in {}.".format(cmd, host)
             ssh.exec_command(cmd)
@@ -96,8 +111,7 @@ class SysInfo(object):
         self.cleanup_all()
         for host in self.host_list:
             print 'get sysinfo logs from {}'.format(host)
-            p = Process(target=self.get_all_logfile,args=(host, log_dir))
-            p.start()
+            self.get_all_logfile(self.nodes[host]['public_ip'], log_dir)
 
     def get_ceph_perfdump(self, host):
         #cmds = ['while true; do find /var/run/ceph -name \'*osd*asok\' | while read path; do ceph --admin-daemon $path perf dump; done; sleep 1; done >/tmp/perfdump.log &']
@@ -116,6 +130,8 @@ class SysInfo(object):
     def deal_with_sysinfo_logfile(self, log_dir, ceph_info):
         self.deal_with_sarlog(log_dir, ceph_info)
         self.deal_with_iostatlog(log_dir, ceph_info)
+
+    def close_db(self):
         if self.havedb:
             self.db.close_db()
 
@@ -287,15 +303,15 @@ class SysInfo(object):
 
         all_result = {}
         for host in self.host_list:
-            all_result[host] = self.deal_with_sarlog_cpu(host, casename)
+            all_result[host] = self.deal_with_sarlog_cpu(self.nodes[host]['public_ip'], casename)
         json.dump(all_result, open('./sar_cpu.json', 'w'), indent=2)
 
         for host in self.host_list:
-            all_result[host] = self.deal_with_sarlog_memory(host, casename)
+            all_result[host] = self.deal_with_sarlog_memory(self.nodes[host]['public_ip'], casename)
         json.dump(all_result, open('./sar_memory.json', 'w'), indent=2)
 
         for host in self.host_list:
-            all_result[host] = self.deal_with_sarlog_nic(host, casename, ceph_info)
+            all_result[host] = self.deal_with_sarlog_nic(self.nodes[host]['public_ip'], casename, ceph_info)
         json.dump(all_result, open('./sar_nic.json', 'w'), indent=2)
 
         os.chdir(org_dir)
@@ -342,16 +358,16 @@ class SysInfo(object):
         for host in self.host_list:
             osd_result = {}
 
-            with open('{}_iostat.log'.format(host)) as f:
+            with open('{}_iostat.log'.format(self.nodes[host]['public_ip'])) as f:
                 time = f.readline()
             osd_result['start_time'] = re.search(' (\S*:.*:\S*) ', time).group(1)
 
-            for osd_num,osd in nodes[host].items():
+            for osd_num,osd in self.nodes[host]['osd'].items():
                 oj_result = {}
                 for disk_name,disk in osd.items():
                     osd_disk = re.match('/dev/(.*)', disk).group(1)
                     disk_result = []
-                    cmd = 'grep "{}" {}_iostat.log'.format(osd_disk, host)
+                    cmd = 'grep "{}" {}_iostat.log'.format(osd_disk, self.nodes[host]['public_ip'])
                     disk_data_list = subprocess.check_output(cmd, shell=True).split('\n')
                     del disk_data_list[0]
                     del disk_data_list[-1]
@@ -385,11 +401,25 @@ class SysInfo(object):
         os.chdir(org_dir)
 
     def deal_with_perfdumplog(self, log_dir):
-        os.chdir(log_dir)
-        for host in self.host_list:
-            with open('{}_perfdump_.log'.format(host)) as f:
-                load_dict = json.load(f)
-                print load_dict
+        if self.havedb:
+            os.chdir(log_dir)
+            for host in self.host_list:
+                with open('{}_perfdump.log'.format(self.nodes[host]['public_ip'])) as f:
+                    load_dict = json.load(f)
+                    print load_dict
+
+    def deal_with_cephconfiglog(self, log_dir):
+        if self.havedb:
+            os.chdir(log_dir)
+            dir_list = os.getcwd().split('/')
+            casename = re.match('sysinfo_(.*)', dir_list[-1]).group(1)
+            for host in self.host_list:
+                with open('{}_ceph_config.log'.format(self.nodes[host]['public_ip'])) as f:
+                    ceph_configs = json.load(f)
+                print "================================="
+                print ceph_configs['debug_paxos']
+                print "================================="
+                self.db.insert_tb_cephconfigdata(casename, host, **ceph_configs)
 
 
 
@@ -455,7 +485,8 @@ def main():
                     help='''sysinfo log dir''')
     args = parser.parse_args()
 
-    sysinfo = SysInfo()
+    client = '10.240.217.101'
+    sysinfo = SysInfo(client)
     '''
     #sysinfo.get_sys_info()
     #sysinfo.cleanup_all()

@@ -204,20 +204,31 @@ class Result(object):
             ws.cell(row = row, column = 1).value = '{}'.format(log)
             ws.cell(row = row, column = 1).border = self.border
             #fill iops and lat
+            log_list = []
             with open('{}.log'.format(log), 'r') as f:
                 begin_to = False
-                log_list = []
                 for line in f:
                     if begin_to:
                         log_list.append(line)
                     if re.match('All clients', line):
                         begin_to = True
-           
+            if len(log_list) == 0:
+                with open('{}.log'.format(log), 'r') as f:
+                    log_list = f.readlines()
             iops = self.fill_iops_G(log_list, ws, row)
             lat = self.fill_lat_I(log_list, ws, row)
 
             if self.havedb:
+                time = '{}-{}-{} {}:{}:{}'.format(
+                    config_log[9],
+                    config_log[10],
+                    config_log[11],
+                    config_log[12],
+                    config_log[13],
+                    config_log[14]
+                )
                 result_to_db = {
+                    'time': time,
                     'case_name': log,
                     'blocksize': bs,
                     'iodepth': iodepth,
