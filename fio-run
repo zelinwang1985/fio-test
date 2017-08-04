@@ -124,7 +124,7 @@ if [ $1 == "build-suite" ]; then
   done
 
   cephconfig=""
-  while [ "$cephconfig" == ""]; do
+  while [ "$cephconfig" == "" ]; do
     echo -n "
         Enter the ceph config you want to modify, eg. \"debug_paxos:35,debug_paxos:[1-20]\":"
     read cephconfig

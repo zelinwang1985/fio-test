@@ -20,7 +20,8 @@ class RunFIO(object):
         os.chdir(path)
         with open('fioserver_list.conf', 'r') as f:
             clients = f.readlines()
-            self.sysinfo = SysInfo(clients[0], havedb=todb)
+            client = clients[0].strip()
+            self.sysinfo = SysInfo(client, havedb=todb)
 
         self.hwinfo_file = '{}/../../ceph_hw_info.yml'.format(os.getcwd())
         with open(self.hwinfo_file, 'r') as f:
