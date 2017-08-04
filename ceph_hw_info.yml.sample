@@ -1,0 +1,23 @@
+ceph-node:
+  worker-1:
+    public_ip: 192.168.230.168
+    osd:
+      osd.0:
+        osd-disk: /dev/sda
+        journal-disk: /dev/sdb
+  worker-2:
+    public_ip: 192.168.230.140
+    osd:
+      osd.1:
+        osd-disk: /dev/sda
+        journal-disk: /dev/sdb
+  worker-3:
+    public_ip: 192.168.230.222
+    osd:
+      osd.2:
+        osd-disk: /dev/sda
+        journal-disk: /dev/sdb
+
+ceph-network:
+  public_network: 192.168.230.0/24
+  cluster_network: 192.168.220.0/24
