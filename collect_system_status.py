@@ -166,8 +166,6 @@ class SysInfo(object):
             sftp.get(remotepath, localpath)
         t.close()
 
-
-
     def deal_with_sysinfo_logfile(self, log_dir, ceph_info):
         self.deal_with_sarlog(log_dir, ceph_info)
         self.deal_with_iostatlog(log_dir, ceph_info)
@@ -423,6 +421,7 @@ class SysInfo(object):
                         result['wrqms'] = data[2]
                         result['rs'] = data[3]
                         result['ws'] = data[4]
+                        result['tps'] = float(data[3])+float(data[4])
                         result['rMBs'] = data[5]
                         result['wMBs'] = data[6]
                         result['avgrqsz'] = data[7]
@@ -445,10 +444,12 @@ class SysInfo(object):
     def deal_with_perfdumplog(self, log_dir):
         if self.havedb:
             os.chdir(log_dir)
+            dir_list = os.getcwd().split('/')
+            casename = re.match('sysinfo_(.*)', dir_list[-1]).group(1)
             for host in self.host_list:
                 with open('{}_perfdump.log'.format(self.nodes[host]['public_ip'])) as f:
-                    load_dict = json.load(f)
-                    print load_dict
+                    perfdump = json.load(f)
+                    #self.db.insert_tb_perfdumpdata(casename, host, **perfdump)
 
     def deal_with_cephconfiglog(self, log_dir):
         if self.havedb:
@@ -458,12 +459,14 @@ class SysInfo(object):
             log_files = os.popen('ls *ceph_config.json').readlines()
             for log_file in log_files:
                 log_file = log_file.strip()
-                print log_file
                 host = log_file.split('_')[0]
                 osd = log_file.split('_')[1]
                 ceph_configs = json.load(open(log_file))
-                self.db.insert_tb_cephconfigdata(casename, host, osd, **ceph_configs)
-
+                self.db.insert_tb_cephconfigfilestonedata(casename, host, osd, **ceph_configs)
+                self.db.insert_tb_cephconfigjournaldata(casename, host, osd, **ceph_configs)
+                self.db.insert_tb_cephconfigosddata(casename, host, osd, **ceph_configs)
+                self.db.insert_tb_cephconfigrbddata(casename, host, osd, **ceph_configs)
+                self.db.insert_tb_cephconfigclientdata(casename, host, osd, **ceph_configs)
 
 
 def format_subnet(subnet_input):  

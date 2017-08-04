@@ -151,31 +151,15 @@ elif [ $1 == "run" ]; then
     echo "Can't find test suite $2."
     exit 1
   else
-    if [ "$3" == "-b" ]; then
-      todb="Yes"
+    if [ "$3" == "--nodb" ]; then
+      date >>$LOG
+      echo python run_suite.py -N $2| tee -a $LOG
+      python run_suite.py -N $2| tee -a $LOG
+    else
       date >>$LOG
       echo python run_suite.py -N $2 -b | tee -a $LOG
       python run_suite.py -N $2 -b | tee -a $LOG
-    else
-      todb=""
     fi
-
-    while [ "$todb" == "" ]; do
-      echo -n "
-        Do you want to insert the result data to db[Yes|No]:"
-      read todb
-      if [ "$todb" = "Yes" ]; then
-        date >>$LOG
-        echo python run_suite.py -N $2 -b | tee -a $LOG
-        python run_suite.py -N $2 -b | tee -a $LOG
-      elif [ "$todb" = "No" ]; then
-        date >>$LOG
-        echo python run_suite.py -N $2 | tee -a $LOG
-        python run_suite.py -N $2 | tee -a $LOG
-      else
-        todb=""
-      fi
-    done
   fi
 
 elif [ $1 == "list-suites" ]; then
